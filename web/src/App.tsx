@@ -16,12 +16,19 @@ export default function App() {
   const [score, setScore] = useState(0);
   const [bestScore, setBestScore] = useState(getBestScore);
   const [paused, setPaused] = useState(false);
+  const [playerScore, setPlayerScore] = useState(0);
+  const [aiScore, setAiScore] = useState(0);
   const scoreRef = useRef(0);
   const { submitScore } = useLeaderboard("pong");
 
   const handleScore = useCallback((s: number) => {
     scoreRef.current = s;
     setScore(s);
+  }, []);
+
+  const handleStats = useCallback((stats: { playerScore: number; aiScore: number }) => {
+    setPlayerScore(stats.playerScore);
+    setAiScore(stats.aiScore);
   }, []);
 
   const handleGameOver = useCallback(() => {
@@ -59,7 +66,8 @@ export default function App() {
         <GameTopbar
           title="Pong"
           stats={[
-            { label: "Score", value: score, accent: true },
+            { label: "You", value: playerScore, accent: true },
+            { label: "CPU", value: aiScore },
             { label: "Best", value: bestScore },
           ]}
           rules={
@@ -87,7 +95,7 @@ export default function App() {
     >
       <div className="relative w-full h-full">
         {phase === "playing" ? (
-          <Game onScore={handleScore} onGameOver={handleGameOver} paused={paused} />
+          <Game onScore={handleScore} onGameOver={handleGameOver} onStats={handleStats} paused={paused} />
         ) : (
           <div className="flex flex-col items-center justify-center h-full gap-4">
             <p

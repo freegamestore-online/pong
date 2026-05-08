@@ -4,6 +4,7 @@ import { useGameSounds } from "@freegamestore/games";
 interface GameProps {
   onScore: (score: number) => void;
   onGameOver: () => void;
+  onStats?: (stats: { playerScore: number; aiScore: number }) => void;
   paused?: boolean;
 }
 
@@ -63,18 +64,20 @@ function resetBall(s: GameState) {
   s.ballVY = Math.sin(angle) * s.ballSpeed;
 }
 
-export function Game({ onScore, onGameOver, paused }: GameProps) {
+export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<GameState | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number>(0);
   const onScoreRef = useRef(onScore);
   const onGameOverRef = useRef(onGameOver);
+  const onStatsRef = useRef(onStats);
   const pausedRef = useRef(paused);
   const sounds = useGameSounds();
   const soundsRef = useRef(sounds);
   onScoreRef.current = onScore;
   onGameOverRef.current = onGameOver;
+  onStatsRef.current = onStats;
   pausedRef.current = paused;
   soundsRef.current = sounds;
 
@@ -111,18 +114,20 @@ export function Game({ onScore, onGameOver, paused }: GameProps) {
     };
 
     const handleTouchStart = (e: TouchEvent) => {
+      const rect = canvas.getBoundingClientRect();
       for (let i = 0; i < e.touches.length; i++) {
         const touch = e.touches[i]!;
-        if (touch.clientX < window.innerWidth / 2) {
+        if (touch.clientX < rect.left + rect.width / 2) {
           touchYRef.current = touch.clientY;
         }
       }
     };
     const handleTouchMove = (e: TouchEvent) => {
       e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
       for (let i = 0; i < e.touches.length; i++) {
         const touch = e.touches[i]!;
-        if (touch.clientX < window.innerWidth / 2) {
+        if (touch.clientX < rect.left + rect.width / 2) {
           touchYRef.current = touch.clientY;
         }
       }
@@ -272,6 +277,9 @@ export function Game({ onScore, onGameOver, paused }: GameProps) {
         resetBall(s);
       }
 
+      // Report stats
+      onStatsRef.current?.({ playerScore: s.playerScore, aiScore: s.aiScore });
+
       // Draw
       ctx.fillStyle = "#111827";
       ctx.fillRect(0, 0, s.canvasW, s.canvasH);
@@ -285,13 +293,6 @@ export function Game({ onScore, onGameOver, paused }: GameProps) {
       ctx.lineTo(s.canvasW / 2, s.canvasH);
       ctx.stroke();
       ctx.setLineDash([]);
-
-      // Scores on canvas
-      ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
-      ctx.font = "bold 48px Fraunces, serif";
-      ctx.textAlign = "center";
-      ctx.fillText(String(s.playerScore), s.canvasW / 2 - 60, 60);
-      ctx.fillText(String(s.aiScore), s.canvasW / 2 + 60, 60);
 
       // Player paddle
       ctx.fillStyle = "#ffffff";
