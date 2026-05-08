@@ -61,6 +61,22 @@ export default function App() {
             { label: "Score", value: score, accent: true },
             { label: "Best", value: bestScore },
           ]}
+          rules={
+            <div>
+              <h3 style={{marginBottom:'0.5rem',fontWeight:700}}>Pong</h3>
+              <p>Classic Pong — first to 11 wins.</p>
+              <h4 style={{marginTop:'0.75rem',fontWeight:600}}>Controls</h4>
+              <ul style={{paddingLeft:'1.2rem',marginTop:'0.25rem'}}>
+                <li>Arrow Up/Down or W/S to move paddle</li>
+                <li>Touch: drag up/down on your side</li>
+              </ul>
+              <h4 style={{marginTop:'0.75rem',fontWeight:600}}>Rules</h4>
+              <ul style={{paddingLeft:'1.2rem',marginTop:'0.25rem'}}>
+                <li>Ball speeds up over time</li>
+                <li>First player to 11 points wins</li>
+              </ul>
+            </div>
+          }
           actions={<GameAuth />}
         />
       }
