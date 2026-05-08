@@ -3,6 +3,7 @@ import { useRef, useEffect, useCallback } from "react";
 interface GameProps {
   onScore: (score: number) => void;
   onGameOver: () => void;
+  paused?: boolean;
 }
 
 const PADDLE_WIDTH = 12;
@@ -61,15 +62,17 @@ function resetBall(s: GameState) {
   s.ballVY = Math.sin(angle) * s.ballSpeed;
 }
 
-export function Game({ onScore, onGameOver }: GameProps) {
+export function Game({ onScore, onGameOver, paused }: GameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<GameState | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number>(0);
   const onScoreRef = useRef(onScore);
   const onGameOverRef = useRef(onGameOver);
+  const pausedRef = useRef(paused);
   onScoreRef.current = onScore;
   onGameOverRef.current = onGameOver;
+  pausedRef.current = paused;
 
   // Touch support: track touch Y on left half of screen
   const touchYRef = useRef<number | null>(null);
@@ -140,6 +143,11 @@ export function Game({ onScore, onGameOver }: GameProps) {
 
       const s = stateRef.current!;
       if (!s.alive) return;
+
+      if (pausedRef.current) {
+        rafRef.current = requestAnimationFrame(loop);
+        return;
+      }
 
       const keys = keysRef.current;
       const playerSpeed = 6;
