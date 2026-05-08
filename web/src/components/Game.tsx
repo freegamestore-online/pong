@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback } from "react";
+import { useGameSounds } from "@freegamestore/games";
 
 interface GameProps {
   onScore: (score: number) => void;
@@ -70,9 +71,12 @@ export function Game({ onScore, onGameOver, paused }: GameProps) {
   const onScoreRef = useRef(onScore);
   const onGameOverRef = useRef(onGameOver);
   const pausedRef = useRef(paused);
+  const sounds = useGameSounds();
+  const soundsRef = useRef(sounds);
   onScoreRef.current = onScore;
   onGameOverRef.current = onGameOver;
   pausedRef.current = paused;
+  soundsRef.current = sounds;
 
   // Touch support: track touch Y on left half of screen
   const touchYRef = useRef<number | null>(null);
@@ -218,6 +222,7 @@ export function Game({ onScore, onGameOver, paused }: GameProps) {
         const angle = hitPos * (Math.PI / 4); // max 45 degrees
         s.ballVX = Math.cos(angle) * s.ballSpeed;
         s.ballVY = Math.sin(angle) * s.ballSpeed;
+        soundsRef.current.playMove();
       }
 
       // AI paddle collision (right side)
@@ -241,8 +246,10 @@ export function Game({ onScore, onGameOver, paused }: GameProps) {
       // Score: ball passes left wall (AI scores)
       if (s.ballX + BALL_SIZE / 2 < 0) {
         s.aiScore++;
+        soundsRef.current.playError();
         if (s.aiScore >= WINNING_SCORE) {
           s.alive = false;
+          soundsRef.current.playGameOver();
           onScoreRef.current(0); // player lost
           onGameOverRef.current();
           return;
@@ -253,10 +260,12 @@ export function Game({ onScore, onGameOver, paused }: GameProps) {
       // Score: ball passes right wall (player scores)
       if (s.ballX - BALL_SIZE / 2 > s.canvasW) {
         s.playerScore++;
+        soundsRef.current.playScore();
         const scoreDiff = s.playerScore - s.aiScore;
         onScoreRef.current(Math.max(0, scoreDiff));
         if (s.playerScore >= WINNING_SCORE) {
           s.alive = false;
+          soundsRef.current.playGameOver();
           onGameOverRef.current();
           return;
         }
