@@ -16,6 +16,7 @@ const WINNING_SCORE = 11;
 const BASE_BALL_SPEED = 5;
 const SPEED_INCREMENT = 0.3;
 const AI_SPEED = 4.5;
+const SERVE_DELAY = 45; // frames (~0.75s) the ball waits at centre after a point
 
 interface GameState {
   playerY: number;
@@ -28,6 +29,7 @@ interface GameState {
   aiScore: number;
   ballSpeed: number;
   rallyCount: number;
+  serveTimer: number;
   alive: boolean;
   canvasW: number;
   canvasH: number;
@@ -47,6 +49,7 @@ function createState(w: number, h: number): GameState {
     aiScore: 0,
     ballSpeed: BASE_BALL_SPEED,
     rallyCount: 0,
+    serveTimer: 0,
     alive: true,
     canvasW: w,
     canvasH: h,
@@ -58,6 +61,7 @@ function resetBall(s: GameState) {
   s.ballY = s.canvasH / 2;
   s.ballSpeed = BASE_BALL_SPEED;
   s.rallyCount = 0;
+  s.serveTimer = SERVE_DELAY;
   const angle = (Math.random() * 0.5 - 0.25) * Math.PI;
   const dir = Math.random() < 0.5 ? 1 : -1;
   s.ballVX = Math.cos(angle) * s.ballSpeed * dir;
@@ -197,9 +201,13 @@ export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
       }
       s.aiY = Math.max(PADDLE_HEIGHT / 2, Math.min(s.canvasH - PADDLE_HEIGHT / 2, s.aiY));
 
-      // Move ball
-      s.ballX += s.ballVX * dt;
-      s.ballY += s.ballVY * dt;
+      // Move ball (held at centre during the serve delay)
+      if (s.serveTimer > 0) {
+        s.serveTimer -= dt;
+      } else {
+        s.ballX += s.ballVX * dt;
+        s.ballY += s.ballVY * dt;
+      }
 
       // Ball bounce off top/bottom
       if (s.ballY - BALL_SIZE / 2 <= 0) {
