@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect } from "react";
 import { useGameSounds } from "@freegamestore/games";
 
 interface GameProps {
@@ -16,9 +16,14 @@ const WINNING_SCORE = 11;
 const BASE_BALL_SPEED = 5;
 const SPEED_INCREMENT = 0.3;
 const AI_SPEED = 4.5;
-const SERVE_DELAY = 45; // frames (~0.75s) the ball waits at centre after a point
+const SERVE_DELAY = 45; // frames (~0.75s) the ball waits at centre before a serve
+// The paddle hit window is BALL_SIZE + PADDLE_WIDTH = 22px deep. Keeping the
+// largest per-frame step (MAX_BALL_SPEED * MAX_DT = 18px) inside it means the
+// ball cannot tunnel through a paddle, even on a lag spike.
+export const MAX_BALL_SPEED = 12;
+export const MAX_DT = 1.5; // frames
 
-interface GameState {
+export interface GameState {
   playerY: number;
   aiY: number;
   ballX: number;
@@ -35,16 +40,14 @@ interface GameState {
   canvasH: number;
 }
 
-function createState(w: number, h: number): GameState {
-  const angle = (Math.random() * 0.5 - 0.25) * Math.PI;
-  const dir = Math.random() < 0.5 ? 1 : -1;
-  return {
+export function createState(w: number, h: number): GameState {
+  const s: GameState = {
     playerY: h / 2,
     aiY: h / 2,
-    ballX: w / 2,
-    ballY: h / 2,
-    ballVX: Math.cos(angle) * BASE_BALL_SPEED * dir,
-    ballVY: Math.sin(angle) * BASE_BALL_SPEED,
+    ballX: 0,
+    ballY: 0,
+    ballVX: 0,
+    ballVY: 0,
     playerScore: 0,
     aiScore: 0,
     ballSpeed: BASE_BALL_SPEED,
@@ -54,6 +57,8 @@ function createState(w: number, h: number): GameState {
     canvasW: w,
     canvasH: h,
   };
+  resetBall(s); // the first serve waits too, so a Restart doesn't fire the ball instantly
+  return s;
 }
 
 function resetBall(s: GameState) {
@@ -66,6 +71,100 @@ function resetBall(s: GameState) {
   const dir = Math.random() < 0.5 ? 1 : -1;
   s.ballVX = Math.cos(angle) * s.ballSpeed * dir;
   s.ballVY = Math.sin(angle) * s.ballSpeed;
+}
+
+/** Keep paddles and ball at the same relative place when the canvas resizes. */
+export function resizeState(s: GameState, w: number, h: number): void {
+  if (s.canvasW > 0 && s.canvasH > 0) {
+    const sx = w / s.canvasW;
+    const sy = h / s.canvasH;
+    s.ballX *= sx;
+    s.ballY *= sy;
+    s.playerY *= sy;
+    s.aiY *= sy;
+  }
+  s.canvasW = w;
+  s.canvasH = h;
+}
+
+/** Size the backing store in device pixels; drawing stays in CSS pixels. */
+export function sizeCanvas(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function bounceOffPaddle(s: GameState, paddleY: number, dir: 1 | -1): void {
+  s.rallyCount++;
+  s.ballSpeed = Math.min(BASE_BALL_SPEED + s.rallyCount * SPEED_INCREMENT, MAX_BALL_SPEED);
+  const hitPos = (s.ballY - paddleY) / (PADDLE_HEIGHT / 2); // -1 to 1
+  const angle = hitPos * (Math.PI / 4); // max 45 degrees
+  s.ballVX = dir * Math.cos(angle) * s.ballSpeed;
+  s.ballVY = Math.sin(angle) * s.ballSpeed;
+}
+
+export type BallEvent = "playerHit" | "aiHit" | "playerPoint" | "aiPoint" | null;
+
+/** Move the ball one step: walls, paddles and scoring (increments the score). */
+export function stepBall(s: GameState, dt: number): BallEvent {
+  // Held at centre during the serve delay
+  if (s.serveTimer > 0) {
+    s.serveTimer -= dt;
+  } else {
+    s.ballX += s.ballVX * dt;
+    s.ballY += s.ballVY * dt;
+  }
+
+  // Ball bounce off top/bottom
+  if (s.ballY - BALL_SIZE / 2 <= 0) {
+    s.ballY = BALL_SIZE / 2;
+    s.ballVY = Math.abs(s.ballVY);
+  }
+  if (s.ballY + BALL_SIZE / 2 >= s.canvasH) {
+    s.ballY = s.canvasH - BALL_SIZE / 2;
+    s.ballVY = -Math.abs(s.ballVY);
+  }
+
+  // Player paddle collision (left side)
+  const playerPaddleX = PADDLE_MARGIN + PADDLE_WIDTH;
+  if (
+    s.ballVX < 0 &&
+    s.ballX - BALL_SIZE / 2 <= playerPaddleX &&
+    s.ballX - BALL_SIZE / 2 >= PADDLE_MARGIN - BALL_SIZE &&
+    s.ballY >= s.playerY - PADDLE_HEIGHT / 2 &&
+    s.ballY <= s.playerY + PADDLE_HEIGHT / 2
+  ) {
+    s.ballX = playerPaddleX + BALL_SIZE / 2;
+    bounceOffPaddle(s, s.playerY, 1);
+    return "playerHit";
+  }
+
+  // AI paddle collision (right side)
+  const aiPaddleX = s.canvasW - PADDLE_MARGIN - PADDLE_WIDTH;
+  if (
+    s.ballVX > 0 &&
+    s.ballX + BALL_SIZE / 2 >= aiPaddleX &&
+    s.ballX + BALL_SIZE / 2 <= s.canvasW - PADDLE_MARGIN + BALL_SIZE &&
+    s.ballY >= s.aiY - PADDLE_HEIGHT / 2 &&
+    s.ballY <= s.aiY + PADDLE_HEIGHT / 2
+  ) {
+    s.ballX = aiPaddleX - BALL_SIZE / 2;
+    bounceOffPaddle(s, s.aiY, -1);
+    return "aiHit";
+  }
+
+  // Ball passes left wall (AI scores)
+  if (s.ballX + BALL_SIZE / 2 < 0) {
+    s.aiScore++;
+    return "aiPoint";
+  }
+  // Ball passes right wall (player scores)
+  if (s.ballX - BALL_SIZE / 2 > s.canvasW) {
+    s.playerScore++;
+    return "playerPoint";
+  }
+  return null;
 }
 
 export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
@@ -88,33 +187,29 @@ export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
   // Touch support: track touch Y on left half of screen
   const touchYRef = useRef<number | null>(null);
 
-  const resize = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const parent = canvas.parentElement;
-    if (!parent) return;
-    const w = parent.clientWidth;
-    const h = parent.clientHeight;
-    canvas.width = w;
-    canvas.height = h;
-    if (stateRef.current) {
-      stateRef.current.canvasW = w;
-      stateRef.current.canvasH = h;
-    }
-  }, []);
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const ctx = canvas.getContext("2d")!;
+    const parent = canvas.parentElement!;
 
-    resize();
-    stateRef.current = createState(canvas.width, canvas.height);
+    sizeCanvas(canvas, ctx, parent.clientWidth, parent.clientHeight);
+    stateRef.current = createState(parent.clientWidth, parent.clientHeight);
+
+    const resize = () => {
+      sizeCanvas(canvas, ctx, parent.clientWidth, parent.clientHeight);
+      resizeState(stateRef.current!, parent.clientWidth, parent.clientHeight);
+    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       keysRef.current.add(e.key);
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       keysRef.current.delete(e.key);
+    };
+    // A key released while the window is unfocused never fires keyup
+    const handleBlur = () => {
+      keysRef.current.clear();
     };
 
     const handleTouchStart = (e: TouchEvent) => {
@@ -142,16 +237,17 @@ export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
     window.addEventListener("resize", resize);
     canvas.addEventListener("touchstart", handleTouchStart, { passive: true });
     canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
     canvas.addEventListener("touchend", handleTouchEnd, { passive: true });
+    canvas.addEventListener("touchcancel", handleTouchEnd, { passive: true });
 
-    const ctx = canvas.getContext("2d")!;
     let lastTime = performance.now();
 
     const loop = (now: number) => {
-      const dt = Math.min((now - lastTime) / 16.667, 3); // normalize to ~60fps
+      const dt = Math.min((now - lastTime) / 16.667, MAX_DT); // normalize to ~60fps
       lastTime = now;
 
       const s = stateRef.current!;
@@ -201,64 +297,10 @@ export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
       }
       s.aiY = Math.max(PADDLE_HEIGHT / 2, Math.min(s.canvasH - PADDLE_HEIGHT / 2, s.aiY));
 
-      // Move ball (held at centre during the serve delay)
-      if (s.serveTimer > 0) {
-        s.serveTimer -= dt;
-      } else {
-        s.ballX += s.ballVX * dt;
-        s.ballY += s.ballVY * dt;
-      }
+      const event = stepBall(s, dt);
+      if (event === "playerHit") soundsRef.current.playMove();
 
-      // Ball bounce off top/bottom
-      if (s.ballY - BALL_SIZE / 2 <= 0) {
-        s.ballY = BALL_SIZE / 2;
-        s.ballVY = Math.abs(s.ballVY);
-      }
-      if (s.ballY + BALL_SIZE / 2 >= s.canvasH) {
-        s.ballY = s.canvasH - BALL_SIZE / 2;
-        s.ballVY = -Math.abs(s.ballVY);
-      }
-
-      // Player paddle collision (left side)
-      const playerPaddleX = PADDLE_MARGIN + PADDLE_WIDTH;
-      if (
-        s.ballVX < 0 &&
-        s.ballX - BALL_SIZE / 2 <= playerPaddleX &&
-        s.ballX - BALL_SIZE / 2 >= PADDLE_MARGIN - BALL_SIZE &&
-        s.ballY >= s.playerY - PADDLE_HEIGHT / 2 &&
-        s.ballY <= s.playerY + PADDLE_HEIGHT / 2
-      ) {
-        s.ballX = playerPaddleX + BALL_SIZE / 2;
-        s.rallyCount++;
-        s.ballSpeed = BASE_BALL_SPEED + s.rallyCount * SPEED_INCREMENT;
-        const hitPos = (s.ballY - s.playerY) / (PADDLE_HEIGHT / 2); // -1 to 1
-        const angle = hitPos * (Math.PI / 4); // max 45 degrees
-        s.ballVX = Math.cos(angle) * s.ballSpeed;
-        s.ballVY = Math.sin(angle) * s.ballSpeed;
-        soundsRef.current.playMove();
-      }
-
-      // AI paddle collision (right side)
-      const aiPaddleX = s.canvasW - PADDLE_MARGIN - PADDLE_WIDTH;
-      if (
-        s.ballVX > 0 &&
-        s.ballX + BALL_SIZE / 2 >= aiPaddleX &&
-        s.ballX + BALL_SIZE / 2 <= s.canvasW - PADDLE_MARGIN + BALL_SIZE &&
-        s.ballY >= s.aiY - PADDLE_HEIGHT / 2 &&
-        s.ballY <= s.aiY + PADDLE_HEIGHT / 2
-      ) {
-        s.ballX = aiPaddleX - BALL_SIZE / 2;
-        s.rallyCount++;
-        s.ballSpeed = BASE_BALL_SPEED + s.rallyCount * SPEED_INCREMENT;
-        const hitPos = (s.ballY - s.aiY) / (PADDLE_HEIGHT / 2); // -1 to 1
-        const angle = hitPos * (Math.PI / 4); // max 45 degrees
-        s.ballVX = -(Math.cos(angle) * s.ballSpeed);
-        s.ballVY = Math.sin(angle) * s.ballSpeed;
-      }
-
-      // Score: ball passes left wall (AI scores)
-      if (s.ballX + BALL_SIZE / 2 < 0) {
-        s.aiScore++;
+      if (event === "aiPoint") {
         soundsRef.current.playError();
         if (s.aiScore >= WINNING_SCORE) {
           s.alive = false;
@@ -270,9 +312,7 @@ export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
         resetBall(s);
       }
 
-      // Score: ball passes right wall (player scores)
-      if (s.ballX - BALL_SIZE / 2 > s.canvasW) {
-        s.playerScore++;
+      if (event === "playerPoint") {
         soundsRef.current.playScore();
         const scoreDiff = s.playerScore - s.aiScore;
         onScoreRef.current(Math.max(0, scoreDiff));
@@ -333,12 +373,14 @@ export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
       cancelAnimationFrame(rafRef.current);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
       window.removeEventListener("resize", resize);
       canvas.removeEventListener("touchstart", handleTouchStart);
       canvas.removeEventListener("touchmove", handleTouchMove);
       canvas.removeEventListener("touchend", handleTouchEnd);
+      canvas.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, [resize]);
+  }, []);
 
   return (
     <canvas
