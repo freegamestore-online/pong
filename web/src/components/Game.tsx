@@ -167,6 +167,43 @@ export function stepBall(s: GameState, dt: number): BallEvent {
   return null;
 }
 
+function draw(ctx: CanvasRenderingContext2D, s: GameState): void {
+  ctx.fillStyle = "#111827";
+  ctx.fillRect(0, 0, s.canvasW, s.canvasH);
+
+  // Center line
+  ctx.setLineDash([8, 8]);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(s.canvasW / 2, 0);
+  ctx.lineTo(s.canvasW / 2, s.canvasH);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Player paddle
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(
+    PADDLE_MARGIN,
+    s.playerY - PADDLE_HEIGHT / 2,
+    PADDLE_WIDTH,
+    PADDLE_HEIGHT,
+  );
+
+  // AI paddle
+  ctx.fillRect(
+    s.canvasW - PADDLE_MARGIN - PADDLE_WIDTH,
+    s.aiY - PADDLE_HEIGHT / 2,
+    PADDLE_WIDTH,
+    PADDLE_HEIGHT,
+  );
+
+  // Ball
+  ctx.beginPath();
+  ctx.arc(s.ballX, s.ballY, BALL_SIZE / 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<GameState | null>(null);
@@ -223,13 +260,7 @@ export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
     };
     const handleTouchMove = (e: TouchEvent) => {
       e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      for (let i = 0; i < e.touches.length; i++) {
-        const touch = e.touches[i]!;
-        if (touch.clientX < rect.left + rect.width / 2) {
-          touchYRef.current = touch.clientY;
-        }
-      }
+      handleTouchStart(e);
     };
     const handleTouchEnd = () => {
       touchYRef.current = null;
@@ -272,8 +303,7 @@ export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
       // Player paddle movement (touch)
       if (touchYRef.current !== null) {
         const canvasRect = canvas.getBoundingClientRect();
-        const relativeY = touchYRef.current - canvasRect.top;
-        const targetY = relativeY;
+        const targetY = touchYRef.current - canvasRect.top;
         const diff = targetY - s.playerY;
         const maxMove = playerSpeed * dt * 2;
         if (Math.abs(diff) > maxMove) {
@@ -328,41 +358,7 @@ export function Game({ onScore, onGameOver, onStats, paused }: GameProps) {
       // Report stats
       onStatsRef.current?.({ playerScore: s.playerScore, aiScore: s.aiScore });
 
-      // Draw
-      ctx.fillStyle = "#111827";
-      ctx.fillRect(0, 0, s.canvasW, s.canvasH);
-
-      // Center line
-      ctx.setLineDash([8, 8]);
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(s.canvasW / 2, 0);
-      ctx.lineTo(s.canvasW / 2, s.canvasH);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Player paddle
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(
-        PADDLE_MARGIN,
-        s.playerY - PADDLE_HEIGHT / 2,
-        PADDLE_WIDTH,
-        PADDLE_HEIGHT,
-      );
-
-      // AI paddle
-      ctx.fillRect(
-        s.canvasW - PADDLE_MARGIN - PADDLE_WIDTH,
-        s.aiY - PADDLE_HEIGHT / 2,
-        PADDLE_WIDTH,
-        PADDLE_HEIGHT,
-      );
-
-      // Ball
-      ctx.beginPath();
-      ctx.arc(s.ballX, s.ballY, BALL_SIZE / 2, 0, Math.PI * 2);
-      ctx.fill();
+      draw(ctx, s);
 
       rafRef.current = requestAnimationFrame(loop);
     };

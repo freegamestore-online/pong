@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { GameShell, GameTopbar, GameAuth } from "@freegamestore/games";
+import { GameShell, GameTopbar, GameAuth, useLeaderboard } from "@freegamestore/games";
 import { Game } from "./components/Game";
-import { useLeaderboard } from '@freegamestore/games';
 import type { GamePhase } from "./types";
 
 const BEST_SCORE_KEY = "freepong-best";
